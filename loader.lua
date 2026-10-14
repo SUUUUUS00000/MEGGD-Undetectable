@@ -41,8 +41,6 @@ local function createEnvironment(customGlobals)
                 out = out .. tostring(args[i]) .. (i == #args and "\n" or "\t")
             end
             rprint(out)
-        else
-            print(...)
         end
     end)
 
@@ -55,8 +53,6 @@ local function createEnvironment(customGlobals)
                 out = out .. tostring(args[i]) .. (i == #args and "\n" or "\t")
             end
             rprint(out)
-        else
-            warn(...)
         end
     end)
 
@@ -73,7 +69,7 @@ local function createEnvironment(customGlobals)
     local baseGlobals = {
         print = safePrint,
         warn = safeWarn,
-        error = error,
+        error = newcclosure(function() end),
         assert = assert,
         type = type,
         typeof = typeof,
@@ -101,7 +97,7 @@ local function createEnvironment(customGlobals)
         tick = tick,
         time = time,
         elapsedTime = elapsedTime,
-        wait = wait,
+        wait = task.wait or wait,
         delay = delay,
         spawn = spawn,
         settings = settings,
@@ -339,7 +335,6 @@ local function executeScript(source, env, chunkName)
     chunkName = chunkName or ""
     local executable, compileErr = loadstring(source, chunkName)
     if not executable then
-        warn("[Sandbox Compile Error] " .. tostring(compileErr))
         return false, compileErr
     end
 
@@ -347,12 +342,8 @@ local function executeScript(source, env, chunkName)
         setfenv(executable, env)
     end
 
-    task.spawn(function()
-        local ok, runtimeErr = pcall(executable)
-        if not ok then
-            warn("[Sandbox Error] " .. tostring(runtimeErr))
-        end
-    end)
+    local co = coroutine.create(executable)
+    coroutine.resume(co)
 
     return true
 end
