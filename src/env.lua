@@ -30,7 +30,14 @@ local function createEnvironment(customGlobals)
         pairs = pairs,
         ipairs = ipairs,
         unpack = table.unpack or unpack,
-        
+        setmetatable = setmetatable,
+        getmetatable = getmetatable,
+        rawget = rawget,
+        rawset = rawset,
+        rawequal = rawequal,
+        rawlen = rawlen,
+        loadstring = loadstring,
+
         string = table.clone(string),
         table = table.clone(table),
         math = table.clone(math),
@@ -40,6 +47,9 @@ local function createEnvironment(customGlobals)
         debug = table.clone(debug),
         utf8 = table.clone(utf8),
         bit32 = table.clone(bit32),
+
+        Instance = Instance,
+        Enum = Enum,
 
         Vector3 = Vector3,
         Vector2 = Vector2,
@@ -55,6 +65,12 @@ local function createEnvironment(customGlobals)
         Faces = Faces,
         PhysicalProperties = PhysicalProperties,
         DateTime = DateTime,
+        ColorSequence = ColorSequence,
+        ColorSequenceKeypoint = ColorSequenceKeypoint,
+        NumberSequence = NumberSequence,
+        NumberSequenceKeypoint = NumberSequenceKeypoint,
+        NumberRange = NumberRange,
+        Font = Font,
 
         game = safeGame,
         workspace = safeWorkspace,
