@@ -19,14 +19,6 @@ local function createFakeScript()
     return cloneref(fake)
 end
 
-local function freezeTableCopy(original)
-    local copy = table.clone(original)
-    if table.freeze then
-        table.freeze(copy)
-    end
-    return copy
-end
-
 local function createEnvironment(customGlobals)
     customGlobals = customGlobals or {}
 
@@ -34,48 +26,11 @@ local function createEnvironment(customGlobals)
     local sandboxed_G = {}
     local sandboxed_shared = {}
 
-    local rawGame = cloneref(game)
+    local safeGame = cloneref(game)
     local safeWorkspace = cloneref(workspace)
     local virtualScript = createFakeScript()
 
-    local safeGame = newproxy(true)
-    local safeGameMt = getmetatable(safeGame)
-
-    safeGameMt.__index = newcclosure(function(self, key)
-        if key == "GetService" or key == "FindService" or key == "service" then
-            return newcclosure(function(serviceParent, serviceName)
-                local serviceObj = rawGame:GetService(tostring(serviceName))
-                if serviceObj then
-                    return cloneref(serviceObj)
-                end
-                return nil
-            end)
-        end
-        local prop = rawGame[key]
-        if typeof(prop) == "Instance" then
-            return cloneref(prop)
-        end
-        return prop
-    end)
-
-    safeGameMt.__namecall = newcclosure(function(self, ...)
-        local method = resolveGlobal("getnamecallmethod") and getnamecallmethod()
-        local args = {...}
-        if method == "GetService" or method == "FindService" or method == "service" then
-            local serviceObj = rawGame:GetService(tostring(args[1]))
-            if serviceObj then
-                return cloneref(serviceObj)
-            end
-            return nil
-        end
-        return rawGame[method](rawGame, ...)
-    end)
-
-    safeGameMt.__tostring = newcclosure(function()
-        return tostring(rawGame)
-    end)
-
-    safeGameMt.__metatable = "The metatable is locked"
+    local env = {}
 
     local safePrint = newcclosure(function(...)
         local rprint = resolveGlobal("rconsoleprint")
@@ -115,19 +70,6 @@ local function createEnvironment(customGlobals)
         return originalDebugInfo(target, what)
     end)
 
-    safeDebug.traceback = newcclosure(function(message, level)
-        level = (level or 1) + 1
-        local tb = debug.traceback(message, level)
-        local cleaned = tb:gsub(".-:%d+:%s*", "")
-        return cleaned
-    end)
-
-    if table.freeze then
-        table.freeze(safeDebug)
-    end
-
-    local env = {}
-
     local baseGlobals = {
         print = safePrint,
         warn = safeWarn,
@@ -151,13 +93,7 @@ local function createEnvironment(customGlobals)
         rawequal = rawequal,
         rawlen = rawlen,
         loadstring = loadstring,
-        require = newcclosure(function(module)
-            local result = require(module)
-            if type(result) == "table" then
-                return table.clone(result)
-            end
-            return result
-        end),
+        require = require,
         _VERSION = _VERSION,
         gcinfo = gcinfo,
         collectgarbage = collectgarbage,
@@ -173,15 +109,15 @@ local function createEnvironment(customGlobals)
         stats = stats,
         version = version,
 
-        string = freezeTableCopy(string),
-        table = freezeTableCopy(table),
-        math = freezeTableCopy(math),
-        os = freezeTableCopy(os),
-        task = freezeTableCopy(task),
-        coroutine = freezeTableCopy(coroutine),
+        string = table.clone(string),
+        table = table.clone(table),
+        math = table.clone(math),
+        os = table.clone(os),
+        task = table.clone(task),
+        coroutine = table.clone(coroutine),
         debug = safeDebug,
-        utf8 = freezeTableCopy(utf8),
-        bit32 = freezeTableCopy(bit32),
+        utf8 = table.clone(utf8),
+        bit32 = table.clone(bit32),
 
         script = virtualScript,
 
@@ -393,24 +329,17 @@ local function createEnvironment(customGlobals)
 
         __newindex = newcclosure(function(self, key, value)
             localGlobalStorage[key] = value
-        end),
-
-        __metatable = "The metatable is locked"
+        end)
     }
 
     return setmetatable(env, envMetatable)
-end
-
-local function sanitizeTraceback(err)
-    local errString = tostring(err)
-    local cleaned = errString:gsub(".-:%d+:%s*", "")
-    return cleaned
 end
 
 local function executeScript(source, env, chunkName)
     chunkName = chunkName or ""
     local executable, compileErr = loadstring(source, chunkName)
     if not executable then
+        warn("[Sandbox Compile Error] " .. tostring(compileErr))
         return false, compileErr
     end
 
@@ -418,28 +347,14 @@ local function executeScript(source, env, chunkName)
         setfenv(executable, env)
     end
 
-    local result = {}
-    local success = false
-
-    local runnerThread = coroutine.create(newcclosure(function()
-        local packed = table.pack(xpcall(executable, newcclosure(function(err)
-            return sanitizeTraceback(err)
-        end)))
-        success = packed[1]
-        for i = 2, packed.n do
-            table.insert(result, packed[i])
+    task.spawn(function()
+        local ok, runtimeErr = pcall(executable)
+        if not ok then
+            warn("[Sandbox Error] " .. tostring(runtimeErr))
         end
-    end))
+    end)
 
-    local resumeOk, resumeErr = coroutine.resume(runnerThread)
-    if not resumeOk then
-        return false, sanitizeTraceback(resumeErr)
-    end
-
-    executable = nil
-    source = nil
-
-    return success, table.unpack(result)
+    return true
 end
 
 local Sandbox = {}
